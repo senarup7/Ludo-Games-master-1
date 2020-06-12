@@ -1,0 +1,407 @@
+{\rtf1\ansi\ansicpg1252\deff0\nouicompat\deflang1033{\fonttbl{\f0\fnil\fcharset0 Calibri;}}
+{\*\generator Riched20 10.0.18362}\viewkind4\uc1 
+\pard\sa200\sl276\slmult1\f0\fs22\lang9 using System.Collections;\par
+using System.Collections.Generic;\par
+using UnityEngine;\par
+using Photon.Pun;\par
+public class TurnManager : MonoBehaviourPun\par
+\{\par
+\tab public delegate void OnNextTurn (Token.TokenType tokenType);\par
+\tab public delegate void OnSixThreeTimes (Token.TokenType tokenType);\par
+\par
+\tab public event OnNextTurn onNextTurn;\par
+\tab public event OnSixThreeTimes onSixThreeTimes;\par
+    PlayerHandler _PlayerHandler;\par
+//\tab private Dictionary<Token.TokenType, GameObject[]> tokens;\par
+//\tab public Dictionary<Token.TokenType, GameObject[]> Tokens \{\par
+//\tab\tab get \{ return tokens; \}\par
+//\tab\tab set \{ tokens = value; \}\par
+//\tab\}\par
+//\par
+\tab private TokenManager tokenManager;\par
+\tab private Dice dice;\par
+\tab private DiceManager diceManager;\par
+    private TurnManager _turnManager;\par
+    private OpponentController opponentCtrl;\par
+\tab private BoardHighlighter highlighter;\par
+\tab public Token.TokenType[] selectedTypes;\par
+\tab private int currentToken = 0;\par
+\tab private int lastDiceNum = 0;\par
+\tab private int diceSixCount = 0;\par
+\par
+\tab public void Init (TokenManager tokenManager, DiceManager diceManager, \par
+\tab\tab OpponentController oppCtrl, BoardHighlighter highlighter)\par
+\tab\{\par
+\par
+        _PlayerHandler = FindObjectOfType<PlayerHandler>();\par
+\par
+        this.diceManager = diceManager;\par
+\tab\tab this.opponentCtrl = oppCtrl;\par
+\tab\tab this.highlighter = highlighter;\par
+\tab\tab this.tokenManager = tokenManager;\par
+\par
+\tab\tab opponentCtrl.onTokenSelected += TokenSelected;\par
+\tab\tab opponentCtrl.TokenManager = tokenManager;\par
+\tab\tab diceManager.onDiceRolled += DiceRolled;\par
+\tab\tab dice = diceManager.GetCurrentActiveDice ();\par
+\par
+\tab\tab tokenManager.onTokenAnimationsDone += TokenAnimationsEnd;\par
+\par
+\tab\tab selectedTypes = new Token.TokenType[tokenManager.Tokens.Keys.Count];\par
+\par
+        Debug.Log(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>tokenManager.Tokens.Keys.Count...............>" + tokenManager.Tokens.Keys.Count);\par
+\par
+        tokenManager.Tokens.Keys.CopyTo (selectedTypes, 0);\par
+\par
+\tab\tab foreach (KeyValuePair<Token.TokenType, Token[]> entry in tokenManager.Tokens) \{\par
+\tab\tab\tab for (int i = 0; i < entry.Value.Length; i++) \{\par
+\tab\tab\tab\tab Token t = entry.Value[i].GetComponent<Token> ();\par
+\tab\tab\tab\tab t.onTokenSelected += TokenSelected;\par
+\tab\tab\tab\}\par
+\tab\tab\}\par
+\tab\}\par
+\par
+    /*\par
+\tab  * memulai giliran pertama\par
+\tab  */\par
+    [PunRPC]\par
+    public void StartFirstTurn ()\par
+\tab\{\par
+\tab\tab currentToken = 0;\par
+       \par
+        photonView.RPC("RPC_StopHighlighter", RpcTarget.Others, true);\par
+        // highlighter.StopHighlight ();\par
+\par
+        Token.TokenType section = GetCurrentTokenType();\par
+        photonView.RPC("RPC_Highlighter", RpcTarget.Others, section);\par
+\par
+        photonView.RPC("RPC_ShowDice", RpcTarget.Others, section);\par
+        // diceManager.ShowDice (GetCurrentTokenType ());\par
+\par
+        photonView.RPC("RPC_ActiveDice", RpcTarget.Others, true);\par
+\par
+        Invoke("SetCurrentPVPPlayer", 0.1f);\par
+\par
+\par
+        SetCurrentPlayer(currentToken);\par
+      //  photonView.RPC("SetCurrentPlayer", RpcTarget.Others, currentToken);\par
+        StartCoroutine(StartTurn ());\par
+\tab\}\par
+\par
+    [PunRPC]\par
+    void SetCurrentPlayer(int index)\par
+    \{\par
+        //Debug.Log(">>>>>>> index......." + index);\par
+        //Debug.Log(">>>>>>> tokenManager.ActivePlayers[currentToken]......." + tokenManager.ActivePlayers[index]);\par
+        //Debug.Log(">>>>>>> _PlayerHandler.currentActivePlayer......." + _PlayerHandler.currentActivePlayer);\par
+    \par
+        _PlayerHandler.currentActivePlayer = tokenManager.ActivePlayers[index];\par
+       \par
+    \}\par
+    /*\par
+\tab  * memulai giliran\par
+\tab  */\par
+\par
+    [PunRPC]\par
+    public IEnumerator StartTurn()\par
+    \{\par
+        /*\par
+\tab\tab  * delay \par
+\tab\tab  */\par
+\par
+\par
+        yield return new WaitForSeconds(0.7f);\par
+\par
+        Debug.Log("CURRENT TOKEN ..... " + currentToken);\par
+\par
+\par
+        \par
+\par
+        Token.TokenPlayer tokenPlayer = GetCurrentTokenPlayer();\par
+        highlighter.StopHighlight();\par
+        highlighter.Highlight(GetCurrentTokenType());\par
+\par
+        diceManager.ShowDice(GetCurrentTokenType());\par
+        dice = diceManager.GetCurrentActiveDice();\par
+        \par
+        if (tokenPlayer == Token.TokenPlayer.Player)\par
+        \{\par
+            yield return new WaitForSeconds(0.1f);\par
+            dice.EnableUserInteraction = false;\par
+            dice = diceManager.GetCurrentActiveDice();\par
+\par
+            // dice.EnableUserInteraction = true;\par
+            tokenManager.EnableSelectionMode(GetCurrentTokenType());\par
+        \}\par
+        else if (tokenPlayer == Token.TokenPlayer.Opponent)\par
+        \{\par
+\par
+          //  _PlayerHandler.PlayerText.text = "Opponent";\par
+            yield return new WaitForSeconds(0.1f);\par
+         //   dice.EnableUserInteraction = false;\par
+            dice = diceManager.GetCurrentActiveDice();\par
+\par
+           // dice.EnableUserInteraction = true;\par
+            tokenManager.EnableSelectionMode(GetCurrentTokenType());\par
+            // opponentCtrl.StartTurn (GetCurrentTokenType ());\par
+        \}\par
+\par
+        photonView.RPC("RPC_DiceInteractable", RpcTarget.Others, true);\par
+    \}\par
+   void SetCurrentPVPPlayer()\par
+    \{\par
+\par
+        if (PhotonNetwork.IsConnected)\par
+        \{\par
+            if (PhotonNetwork.CurrentRoom != null)\par
+            \{\par
+                if (PhotonNetwork.CurrentRoom.Players.Count == PhotonLauncher.ExpectedMaxPlayers)\par
+                \{\par
+                    foreach (var player in PhotonNetwork.PlayerList)\par
+                    \{\par
+                        Debug.Log(" PhotonNetwork.PlayerList " + PhotonNetwork.PlayerList.Length);\par
+                        if (PhotonNetwork.LocalPlayer == player)\par
+                        \{\par
+                           Token.TokenType section = GetCurrentTokenType();\par
+    \par
+                            _PlayerHandler.currentPVPPlayer = tokenManager.ActivePlayers[player.ActorNumber-1];\par
+\par
+                              // currentPVPPlayer.dashboard.IndicatePVPCurrentPlayer();\par
+                            Debug.Log("currentPVPPlayer " + _PlayerHandler.currentPVPPlayer.name);\par
+                            _PlayerHandler.PlayerText.text = _PlayerHandler.currentPVPPlayer.name;\par
+\par
+                        \}\par
+                    \}\par
+                \}\par
+            \}\par
+        \}\par
+\par
+        // (GameMaster.instance._GamePlayType == GamePlayType.ONLINE)\par
+        //photonView.RPC("StartPlayerTurn", RpcTarget.Others);\par
+    \}\par
+\par
+    [PunRPC]\par
+    void OpponentActivate(Token.TokenType tokenType)\par
+    \{\par
+        dice = diceManager.GetCurrentActiveDice();\par
+        dice.EnableUserInteraction = true;\par
+    \}\par
+    /*\par
+ * Next Turn for Player\par
+ */\par
+    public void NextTurn()\par
+    \{\par
+\par
+        diceSixCount = 0;\par
+        int count = selectedTypes.Length;\par
+        currentToken++;\par
+        Token.TokenType type = GetCurrentTokenType();\par
+\par
+        Debug.Log(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>  GetCurrentTokenType() >>>>"+ GetCurrentTokenType()); \par
+\par
+        photonView.RPC("SetCurrentPlayer", RpcTarget.Others, currentToken);\par
+         photonView.RPC("RPC_PlayerActiveDice", RpcTarget.Others, GetCurrentTokenPlayer());\par
+        Debug.Log(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>  NEXT TURN");\par
+\par
+        photonView.RPC("RPC_StopHighlighter", RpcTarget.Others, true);\par
+        // highlighter.StopHighlight ();\par
+\par
+        Token.TokenType section = GetCurrentTokenType();\par
+        photonView.RPC("RPC_Highlighter", RpcTarget.Others, section);\par
+\par
+        photonView.RPC("RPC_ShowDice", RpcTarget.Others, section);\par
+        // diceManager.ShowDice (GetCurrentTokenType ());\par
+       // Invoke("SetCurrentPVPPlayer", 0.7f);\par
+        photonView.RPC("SetCurrentPlayer", RpcTarget.Others, currentToken);\par
+        photonView.RPC("RPC_ActiveDice", RpcTarget.Others, true);\par
+\par
+\par
+\par
+\par
+    \}\par
+\par
+\par
+    [PunRPC]\par
+    void RPC_StopHighlighter(bool val)\par
+    \{\par
+        highlighter.StopHighlight();\par
+    \}\par
+\par
+    [PunRPC]\par
+    void RPC_Highlighter(Token.TokenType section)\par
+    \{\par
+        highlighter.Highlight(section);\par
+    \}\par
+\par
+    [PunRPC]\par
+    void RPC_ShowDice(Token.TokenType section)\par
+    \{\par
+        diceManager.ShowDice(section);\par
+    \}\par
+\par
+    [PunRPC]\par
+    void RPC_ActiveDice(bool val)\par
+    \{\par
+        dice = diceManager.GetCurrentActiveDice();\par
+\par
+    \}\par
+\par
+    [PunRPC]\par
+    void RPC_DiceInteractable(bool val)\par
+    \{\par
+        dice = diceManager.GetCurrentActiveDice();\par
+        dice.EnableUserInteraction = val;\par
+\par
+    \}\par
+\par
+\par
+\par
+\par
+\par
+    /*\par
+\tab  * method callback. akan dipanggil ketika dadu selesai dikocok\par
+\tab  * oleh DiceManager\par
+\tab  */\par
+    public void DiceRolled (int diceNum, Token.TokenType type) \par
+\tab\{\par
+\par
+        Debug.Log("DICE ROLL CALLED");\par
+\tab\tab if (diceNum == 6) \{\par
+\tab\tab\tab diceSixCount++;\par
+\tab\tab\tab if (diceSixCount >= 3) \{\par
+\tab\tab\tab\tab dice.EnableUserInteraction = false;\par
+\tab\tab\tab\tab diceSixCount = 0;\par
+\par
+\tab\tab\tab\tab if (onSixThreeTimes != null) \{\par
+\tab\tab\tab\tab\tab onSixThreeTimes (GetCurrentTokenType ());\par
+\tab\tab\tab\tab\}\par
+\par
+\tab\tab\tab\tab NextTurn ();\par
+\tab\tab\tab\tab StartCoroutine (StartTurn ());\par
+\tab\tab\tab\tab return;\par
+            \}\par
+            else\par
+            \{\par
+                dice.EnableUserInteraction = true;\par
+            \}\par
+\tab\tab\}\par
+\par
+\tab\tab lastDiceNum = diceNum;\par
+\tab\tab Token.TokenPlayer player = GetCurrentTokenPlayer ();\par
+\par
+        Debug.Log("Player ...... player...." + player);\par
+        List<Token> movableTokens = tokenManager.GetMovableTokens (GetCurrentTokenType (), diceNum);\par
+\par
+\tab\tab if (diceNum != 6 && movableTokens.Count <= 0) \{\par
+\tab\tab\tab NextTurn ();\par
+\tab\tab\tab StartCoroutine (StartTurn ());\par
+\tab\tab\tab return;\par
+\tab\tab\}\par
+\par
+\tab\tab if (player == Token.TokenPlayer.Player || player==Token.TokenPlayer.Opponent) \{\par
+\tab\tab\tab //dice.EnableUserInteraction = false;\par
+\par
+\tab\tab\tab if (movableTokens.Count == 1) \{\par
+\tab\tab\tab\tab if (!movableTokens [0].MoveToken (diceNum)) \{\par
+\tab\tab\tab\tab\tab NextTurn ();\par
+                    Debug.Log("StartTurn ...... StartTurn...." );\par
+                    StartCoroutine (StartTurn ());\par
+\tab\tab\tab\tab\}\par
+\tab\tab\tab\} else if (movableTokens.Count > 1) \{\par
+\tab\tab\tab\tab for (int i = 0; i < movableTokens.Count; i++)\par
+\tab\tab\tab\tab\tab movableTokens [i].SelectionMode = true;\par
+\tab\tab\tab\}\par
+           \par
+        \} else if (player == Token.TokenPlayer.Opponent) \{\par
+            //opponentCtrl.Play (diceNum);\par
+            //dice.EnableUserInteraction = false;\par
+            //dice = diceManager.GetCurrentActiveDice();\par
+            //dice.EnableUserInteraction = true;\par
+            //tokenManager.EnableSelectionMode(GetCurrentTokenType());\par
+        \}\par
+\par
+\tab\}\par
+\par
+\par
+    [PunRPC]\par
+    void RPC_PlayerInActiveDice(Token.TokenPlayer player)\par
+    \{\par
+        diceManager.DisableAllDice();\par
+        \par
+    \}\par
+   \par
+    [PunRPC]\par
+    void RPC_PlayerActiveDice(Token.TokenPlayer player)\par
+    \{\par
+\par
+        if (player == Token.TokenPlayer.Player)\par
+        \{\par
+            diceManager.ShowDice(GetCurrentTokenType());\par
+            Token.TokenPlayer opponent = Token.TokenPlayer.Opponent;\par
+            photonView.RPC("RPC_PlayerInActiveDice", RpcTarget.Others, opponent);\par
+        \}\par
+        if (player == Token.TokenPlayer.Opponent)\par
+        \{\par
+            diceManager.ShowDice(GetCurrentTokenType());\par
+            Token.TokenPlayer plr = Token.TokenPlayer.Opponent;\par
+            photonView.RPC("RPC_PlayerInActiveDice", RpcTarget.Others, plr);\par
+        \}\par
+    \}\par
+\par
+\par
+    /*\par
+\tab  * callback untuk event onTokenSelected pada object Token\par
+\tab  */\par
+    public void TokenSelected (Token selectedToken)\par
+\tab\{\par
+\tab\tab highlighter.StopHighlight ();\par
+\par
+\tab\tab if (selectedToken == null) \{\par
+\tab\tab\tab NextTurn ();\par
+\tab\tab\tab StartCoroutine (StartTurn ());\par
+\tab\tab\tab return;\par
+\tab\tab\}\par
+\par
+\tab\tab if (selectedToken.State == Token.TokenState.Locked) \{\par
+\tab\tab\tab if (lastDiceNum == 6) \{\par
+\tab\tab\tab\tab selectedToken.Unlock ();\par
+\tab\tab\tab\}\par
+\tab\tab\} else \{\par
+\tab\tab\tab if (!selectedToken.MoveToken (lastDiceNum)) \{\par
+\tab\tab\tab\tab NextTurn ();\par
+\tab\tab\tab\tab StartCoroutine (StartTurn ());\par
+\tab\tab\tab\}\par
+\tab\tab\}\par
+\tab\}\par
+\par
+\tab /*\par
+\tab  * callback untuk event onTokenAnimationEnd pada object TokenManger\par
+\tab  */\par
+\par
+     public Token.TokenPlayer CurrentPlayer()\par
+    \{\par
+       Token.TokenPlayer player= GetCurrentTokenPlayer();\par
+        return player;\par
+    \}\par
+\tab public void TokenAnimationsEnd ()\par
+\tab\{\par
+\tab\tab if (lastDiceNum != 6) \{\par
+\tab\tab\tab NextTurn ();\par
+\tab\tab\}\par
+\par
+\tab\tab StartCoroutine (StartTurn ());\par
+\tab\}\par
+\par
+\tab Token.TokenType GetCurrentTokenType ()\par
+\tab\{\par
+\tab\tab return selectedTypes[currentToken];\par
+\tab\}\par
+\par
+\tab Token.TokenPlayer GetCurrentTokenPlayer ()\par
+\tab\{\par
+\tab\tab return tokenManager.GetTokensOfType (GetCurrentTokenType ())[0].GetComponent<Token> ().Player;\par
+\tab\}\par
+  \par
+\}\par
+}
+ 
